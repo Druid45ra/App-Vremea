@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ro">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aplicație Vremea</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="min-h-screen bg-gradient-to-b from-sky-300 to-blue-600 flex">
+  <aside class="w-64 bg-white/80 backdrop-blur p-4 border-r border-white/30">
+    <h2 class="text-lg font-semibold mb-3">Favorite</h2>
+    <ul id="favoritesList" class="space-y-2 text-sm"></ul>
+    <div class="mt-4">
+      <button id="clearFavs"
+        class="w-full text-xs py-2 rounded bg-red-500 text-white hover:bg-red-600 transition">Șterge toate</button>
+    </div>
+  </aside>
+
+  <main class="flex-1 p-6">
+    <h1 class="text-3xl font-bold mb-4 text-white">Aplicație Vremea</h1>
+
+    <div class="max-w-3xl bg-white/90 backdrop-blur-sm rounded-3xl p-6 shadow-2xl shadow-blue-500/30">
+      <div class="flex gap-3 items-start">
+        <div class="flex-1">
+          <input id="cityInput" type="text" placeholder="Introdu un oraș..."
+            class="p-2 rounded-lg border border-gray-300 w-full focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div class="flex gap-2">
+          <button id="searchBtn"
+            class="bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 transition duration-300 ease-in-out">Caută</button>
+          <button id="geoBtn"
+            class="bg-green-600 text-white rounded-lg px-4 py-2 hover:bg-green-700 transition duration-300 ease-in-out">Locația
+            mea</button>
+        </div>
+      </div>
+
+      <div id="loading" class="hidden mt-3 text-sm text-gray-600">Se încarcă...</div>
+      <div id="error" class="hidden mt-3 text-sm text-red-700 font-semibold"></div>
+
+      <div id="weatherCard" class="hidden mt-4 bg-white rounded-xl p-6 shadow-lg">
+        <div class="flex justify-between items-start">
+          <div>
+            <h2 id="cityName" class="text-2xl font-semibold"></h2>
+            <div id="localTime" class="text-sm text-gray-500"></div>
+            <div id="coords" class="text-xs text-gray-400 mt-1"></div>
+            <div id="source" class="text-xs text-gray-400 mt-1">Sursă: Open-Meteo</div>
+          </div>
+
+          <div class="text-right">
+            <div id="temp" class="text-5xl font-bold flex items-center justify-end gap-3 text-blue-700"></div>
+            <div id="desc" class="uppercase text-xs tracking-wide text-gray-600 mt-1"></div>
+          </div>
+        </div>
+
+        <div class="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4 border-t pt-4 border-gray-200">
+          <div class="text-sm">
+            <div class="text-xs text-gray-500">Umiditate</div>
+            <div id="humidity" class="font-semibold text-base">—</div>
+          </div>
+          <div class="text-sm">
+            <div class="text-xs text-gray-500">Vânt</div>
+            <div id="wind" class="font-semibold text-base">—</div>
+          </div>
+          <div class="text-sm">
+            <div class="text-xs text-gray-500">Presiune</div>
+            <div id="pressure" class="font-semibold text-base">—</div>
+          </div>
+          <div class="text-sm">
+            <div class="text-xs text-gray-500">Răsărit / Apus</div>
+            <div id="sun" class="font-semibold text-base">—</div>
+          </div>
+        </div>
+
+        <div class="mt-4 flex gap-2">
+          <button id="saveFavBtn"
+            class="px-3 py-2 bg-yellow-400 rounded-lg hover:bg-yellow-500 transition duration-300 disabled:opacity-50"
+            disabled>★ Salvează locația</button>
+          <button id="removeFavBtn"
+            class="px-3 py-2 bg-gray-300 rounded-lg hover:bg-gray-400 transition duration-300 disabled:opacity-50"
+            disabled>Șterge din favorite</button>
+        </div>
+      </div>
+
+      <h3 class="text-lg font-semibold mt-8 mb-4 text-gray-700 hidden" id="forecastTitle">Prognoza pe 7 zile</h3>
+      <div id="forecastGrid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3"></div>
+    </div>
+  </main>
+
+  <script>
+    // --- Constante API ---
+    const GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search?name=";
+    const WEATHER_URL = "https://api.open-meteo.com/v1/forecast";
+
+    const WEATHERCODE_DESCRIPTIONS = {
+      0: 'Cer senin', 1: 'Parțial senin', 2: 'Variabil', 3: 'Înnorat',
+      45: 'Ceață', 48: 'Ceață cu chiciură',
+      51: 'Burniță ușoară', 53: 'Burniță moderată', 55: 'Burniță densă',
+      56: 'Burniță înghețată ușoară', 57: 'Burniță înghețată densă',
+      61: 'Ploaie ușoară', 63: 'Ploaie moderată', 65: 'Ploaie puternică',
+      66: 'Ploaie înghețată ușoară', 67: 'Ploaie înghețată puternică',
+      71: 'Ninsoare ușoară', 73: 'Ninsoare moderată', 75: 'Ninsoare puternică',
+      77: 'Grindină',
+      80: 'Averse ușoare de ploaie', 81: 'Averse moderate de ploaie', 82: 'Averse puternice de ploaie',
+      85: 'Averse ușoare de ninsoare', 86: 'Averse puternice de ninsoare',
+      95: 'Furtună (ușoară/moderată)', 96: 'Furtună cu grindină ușoară', 99: 'Furtună cu grindină puternică',
+    };
+
+    // --- Elemente UI ---
+    const cityInput = document.getElementById('cityInput');
+    const searchBtn = document.getElementById('searchBtn');
+    const geoBtn = document.getElementById('geoBtn');
+    const loadingEl = document.getElementById('loading');
+    const errorEl = document.getElementById('error');
+    const weatherCard = document.getElementById('weatherCard');
+    const forecastGrid = document.getElementById('forecastGrid');
+    const forecastTitle = document.getElementById('forecastTitle');
+
+    const cityNameEl = document.getElementById('cityName');
+    const localTimeEl = document.getElementById('localTime');
+    const coordsEl = document.getElementById('coords');
+    const tempEl = document.getElementById('temp');
+    const descEl = document.getElementById('desc');
+    const humidityEl = document.getElementById('humidity');
+    const windEl = document.getElementById('wind');
+    const pressureEl = document.getElementById('pressure');
+    const sunEl = document.getElementById('sun');
+
+    const favoritesListEl = document.getElementById('favoritesList');
+    const clearFavsBtn = document.getElementById('clearFavs');
+    const saveFavBtn = document.getElementById('saveFavBtn');
+    const removeFavBtn = document.getElementById('removeFavBtn');
+
+    let currentData = null;
+    let favorites = loadFavorites();
+
+    // --- Utilitare ---
+    function getIcon(code) {
+      if (code === 0) return '☀️';
+      if (code >= 1 && code <= 3) return '🌤️';
+      if (code >= 45 && code <= 48) return '🌫️';
+      if (code >= 51 && code <= 67) return '🌧️';
+      if (code >= 71 && code <= 77) return '❄️';
+      if (code >= 80 && code <= 82) return '⛈️';
+      if (code >= 85 && code <= 86) return '🌨️';
+      if (code >= 95) return '🌩️';
+      return '❓';
+    }
+
+    function showError(message) {
+      errorEl.textContent = message;
+      errorEl.classList.remove('hidden');
+      loadingEl.classList.add('hidden');
+      weatherCard.classList.add('hidden');
+      forecastTitle.classList.add('hidden');
+    }
+
+    function showLoading() {
+      loadingEl.classList.remove('hidden');
+      errorEl.classList.add('hidden');
+      weatherCard.classList.add('hidden');
+      forecastTitle.classList.add('hidden');
+    }
+
+    function updateLocalTime(timezone) {
+      clearInterval(window.timeUpdater);
+      const options = { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: timezone };
+      window.timeUpdater = setInterval(() => {
+        localTimeEl.textContent = new Date().toLocaleTimeString('ro-RO', options);
+      }, 1000);
+    }
+
+    // Acceptă timestamp (secunde) sau string ISO
+    function convertTime(input, timezone) {
+      let date;
+      if (typeof input === 'number') {
+        date = new Date(input * 1000);
+      } else if (typeof input === 'string') {
+        date = new Date(input);
+      } else {
+        return '—';
+      }
+      return date.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit', timeZone: timezone });
+    }
+
+    // --- Logica API ---
+
+    async function getCoordinates(city) {
+      const url = `${GEOCODING_URL}${encodeURIComponent(city)}&count=1&language=ro&format=json`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Geocoding a eșuat (${response.status}).`);
+      const data = await response.json();
+      if (!data.results || data.results.length === 0) {
+        throw new Error(`Nu am găsit coordonate pentru orașul "${city}".`);
+      }
+      const loc = data.results[0];
+      return {
+        name: loc.name + (loc.country_code ? `, ${loc.country_code}` : ''),
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        timezone: loc.timezone || 'auto',
+      };
+    }
+
+    async function fetchWeatherData(latitude, longitude, timezone, name) {
+      const url = `${WEATHER_URL}?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset&timezone=${encodeURIComponent(timezone)}&forecast_days=7`;
+
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Forecast a eșuat (${response.status}).`);
+      const data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.reason || "Eroare la preluarea datelor meteo.");
+      }
+
+      const current = data.current;
+      const daily = data.daily;
+      const tempUnit = data.current_units?.temperature_2m || '°C';
+      const windUnit = data.current_units?.wind_speed_10m || 'km/h';
+      const pressureUnit = data.current_units?.surface_pressure || 'hPa';
+      const humidityUnit = data.current_units?.relative_humidity_2m || '%';
+
+      return {
+        loc: { name, latitude, longitude, timezone: data.timezone || timezone },
+        current: {
+          temp: current.temperature_2m,
+          apparent_temp: current.apparent_temperature,
+          desc: WEATHERCODE_DESCRIPTIONS[current.weather_code],
+          code: current.weather_code,
+          humidity: current.relative_humidity_2m,
+          wind_speed: current.wind_speed_10m,
+          wind_dir: current.wind_direction_10m,
+          pressure: current.surface_pressure,
+          is_day: current.is_day,
+          sunrise: daily.sunrise[0],   // ISO string
+          sunset: daily.sunset[0],     // ISO string
+        },
+        daily,
+        units: { temp: tempUnit, wind: windUnit, pressure: pressureUnit, humidity: humidityUnit }
+      };
+    }
+
+    function renderWeather(data) {
+      currentData = data;
+      const { loc, current, daily, units } = data;
+
+      cityNameEl.textContent = loc.name;
+      coordsEl.textContent = `Lat: ${loc.latitude.toFixed(2)}, Lon: ${loc.longitude.toFixed(2)}`;
+
+      tempEl.innerHTML = `${Math.round(current.temp)}${units.temp} <span class="text-xl font-normal text-gray-500"> / resimțită ${Math.round(current.apparent_temp)}${units.temp}</span>`;
+      descEl.textContent = current.desc || 'Necunoscut';
+      tempEl.insertAdjacentHTML('afterbegin', `<span class="text-6xl">${getIcon(current.code)}</span>`);
+
+      humidityEl.textContent = `${current.humidity}${units.humidity}`;
+      windEl.textContent = `${Number(current.wind_speed).toFixed(1)} ${units.wind} (${current.wind_dir}°)`;
+      pressureEl.textContent = `${Number(current.pressure).toFixed(0)} ${units.pressure}`;
+
+      const sunriseTime = convertTime(current.sunrise, loc.timezone);
+      const sunsetTime = convertTime(current.sunset, loc.timezone);
+      sunEl.textContent = `${sunriseTime} / ${sunsetTime}`;
+
+      updateLocalTime(loc.timezone);
+      updateFavButtons(loc);
+      weatherCard.classList.remove('hidden');
+
+      renderForecast(daily, loc.timezone);
+      forecastTitle.classList.remove('hidden');
+    }
+
+    function renderForecast(daily, timezone) {
+      forecastGrid.innerHTML = '';
+      if (!daily || !daily.time) return;
+
+      const numDays = Math.min(daily.time.length, 7);
+
+      for (let i = 0; i < numDays; i++) {
+        const dateISO = daily.time[i]; // ISO date (YYYY-MM-DD)
+        const code = daily.weather_code?.[i] ?? -1; // corect: weather_code
+        const card = document.createElement('div');
+        card.className = 'bg-gray-50 rounded-lg p-3 text-center shadow-sm hover:bg-gray-100 transition cursor-default';
+
+        const dayLabel = new Intl.DateTimeFormat('ro-RO', {
+          weekday: 'short', day: 'numeric', month: 'short', timeZone: timezone
+        }).format(new Date(dateISO));
+
+        const tMax = daily.temperature_2m_max?.[i];
+        const tMin = daily.temperature_2m_min?.[i];
+
+        card.innerHTML = `
+          <div class="text-xs text-gray-500">${dayLabel}</div>
+          <div class="text-3xl mt-1">${getIcon(code)}</div>
+          <div class="text-sm mt-1">${WEATHERCODE_DESCRIPTIONS[code] || ''}</div>
+          <div class="font-medium mt-2">${Math.round(tMax ?? 0)}° / ${Math.round(tMin ?? 0)}°</div>
+        `;
+        forecastGrid.appendChild(card);
+      }
+    }
+
+    async function performSearch(query) {
+      if (!query || !query.trim()) { showError('Introduceți numele unui oraș.'); return; }
+      showLoading();
+      try {
+        const loc = await getCoordinates(query.trim());
+        const weatherData = await fetchWeatherData(loc.latitude, loc.longitude, loc.timezone, loc.name);
+        renderWeather(weatherData);
+        loadingEl.classList.add('hidden');
+      } catch (e) {
+        showError(`Eroare: ${e.message}`);
+      }
+    }
+
+    // --- Locația curentă (Geolocation) ---
+    function getGeoLocation() {
+      if (!navigator.geolocation) {
+        showError("Browserul nu suportă Geolocation.");
+        return;
+      }
+      // Geolocation necesită context securizat (https sau localhost)
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+        showError("Geolocation necesită rularea pe https sau localhost.");
+        return;
+      }
+
+      showLoading();
+
+      const success = async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+
+          const tzUrl = `${WEATHER_URL}?latitude=${latitude}&longitude=${longitude}&current=temperature_2m&timezone=auto`;
+          const tzRes = await fetch(tzUrl);
+          const tzData = await tzRes.json();
+          const timezone = tzData.timezone || 'auto';
+
+          const weatherData = await fetchWeatherData(latitude, longitude, timezone, "Locația Curentă");
+          renderWeather(weatherData);
+
+          loadingEl.classList.add('hidden');
+        } catch (e) {
+          showError(`Eroare: ${e.message}`);
+        }
+      };
+
+      const error = (err) => {
+        showError(`Eroare Geolocation: ${err.message}`);
+      };
+
+      navigator.geolocation.getCurrentPosition(success, error, { enableHighAccuracy: true, timeout: 10000 });
+    }
+
+    // --- Favorite (localStorage) ---
+    function loadFavorites() {
+      try {
+        const raw = localStorage.getItem('weather_favorites');
+        return raw ? JSON.parse(raw) : [];
+      } catch {
+        return [];
+      }
+    }
+    function saveFavorites() { localStorage.setItem('weather_favorites', JSON.stringify(favorites)); }
+
+    function renderFavorites() {
+      favoritesListEl.innerHTML = '';
+      if (!favorites.length) {
+        favoritesListEl.innerHTML = '<li class="text-gray-500">(nu există favorite)</li>';
+        return;
+      }
+      favorites.forEach((f, idx) => {
+        const li = document.createElement('li');
+        li.className = 'flex items-center justify-between gap-2 p-1 rounded-md hover:bg-gray-100 transition';
+        li.innerHTML = `
+          <button class="text-left truncate flex-1 hover:text-blue-600 transition" data-name="${f.name}">${f.name}</button>
+          <button class="text-xs px-2 py-1 border rounded remove hover:bg-red-100 transition" data-idx="${idx}">Șterge</button>
+        `;
+        favoritesListEl.appendChild(li);
+      });
+
+      favoritesListEl.querySelectorAll('button[data-name]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const name = e.currentTarget.getAttribute('data-name');
+          performSearch(name);
+        });
+      });
+      favoritesListEl.querySelectorAll('.remove').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const idx = Number(e.currentTarget.getAttribute('data-idx'));
+          favorites.splice(idx, 1); saveFavorites(); renderFavorites();
+          updateFavButtons(currentData?.loc);
+        });
+      });
+    }
+
+    function saveCurrentToFavorites() {
+      if (!currentData || !currentData.loc) { showError('Nu există locație curentă de salvat.'); return; }
+      const loc = currentData.loc;
+      if (!favorites.some(f => f.name === loc.name)) {
+        favorites.push({ name: loc.name, latitude: loc.latitude, longitude: loc.longitude, timezone: loc.timezone });
+        saveFavorites(); renderFavorites();
+      }
+      updateFavButtons(loc);
+    }
+
+    function removeCurrentFromFavorites() {
+      if (!currentData || !currentData.loc) return;
+      const loc = currentData.loc;
+      const idx = favorites.findIndex(f => f.name === loc.name);
+      if (idx !== -1) { favorites.splice(idx, 1); saveFavorites(); renderFavorites(); }
+      updateFavButtons(loc);
+    }
+
+    function updateFavButtons(loc) {
+      if (!loc) { saveFavBtn.disabled = true; removeFavBtn.disabled = true; return; }
+      if (loc.name === "Locația Curentă") {
+        saveFavBtn.disabled = true;
+        removeFavBtn.disabled = true;
+        return;
+      }
+      const exists = favorites.some(f => f.name === loc.name);
+      saveFavBtn.disabled = exists;
+      removeFavBtn.disabled = !exists;
+    }
+
+    function clearAllFavorites() {
+      if (confirm("Ești sigur că vrei să ștergi toate locațiile favorite?")) {
+        favorites = [];
+        saveFavorites();
+        renderFavorites();
+        updateFavButtons(currentData?.loc);
+      }
+    }
+
+    // --- Evenimente ---
+    searchBtn.addEventListener('click', () => performSearch(cityInput.value));
+    cityInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') performSearch(cityInput.value); });
+    geoBtn.addEventListener('click', getGeoLocation);
+    clearFavsBtn.addEventListener('click', clearAllFavorites);
+    saveFavBtn.addEventListener('click', saveCurrentToFavorites);
+    removeFavBtn.addEventListener('click', removeCurrentFromFavorites);
+
+    renderFavorites();
+  </script>
+</body>
+
+</html>
